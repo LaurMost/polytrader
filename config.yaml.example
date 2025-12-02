@@ -1,0 +1,64 @@
+# Polytrader Configuration
+# ========================
+# Copy this file to config.yaml and customize as needed.
+# NEVER commit config.yaml with real credentials!
+
+# Trading mode: "paper" for simulated trading, "live" for real trading
+mode: paper
+
+# Polymarket API settings
+api:
+  # Your private key (use env var reference for security)
+  # Set via: export POLYMARKET_PRIVATE_KEY="your_key_here"
+  private_key: ${POLYMARKET_PRIVATE_KEY}
+  # Polygon chain ID (137 for mainnet)
+  chain_id: 137
+  # CLOB API endpoint
+  host: https://clob.polymarket.com
+
+# WebSocket settings
+websocket:
+  # Reconnect on disconnect
+  auto_reconnect: true
+  # Reconnect delay in seconds
+  reconnect_delay: 5
+  # Heartbeat interval in seconds
+  heartbeat_interval: 30
+
+# Logging settings
+logging:
+  level: INFO
+  # Log file location (relative to data_dir)
+  file: logs/polytrader.log
+  # Console output format: "simple" or "rich"
+  console_format: rich
+
+# Data storage settings
+storage:
+  # Base directory for all data
+  data_dir: ./data
+  # SQLite database file
+  database: polytrader.db
+  # CSV export directory
+  csv_dir: exports
+
+# Paper trading settings
+paper:
+  # Starting balance in USDC
+  starting_balance: 10000.0
+  # Simulated slippage percentage
+  slippage: 0.001
+  # Simulated order fill delay in seconds
+  fill_delay: 0.5
+
+# Strategy settings
+strategy:
+  # Default position size in USDC
+  default_size: 100.0
+  # Maximum position size per market
+  max_position: 1000.0
+  # Stop loss percentage (0 to disable)
+  stop_loss: 0.0
+  # Take profit percentage (0 to disable)
+  take_profit: 0.0
+
