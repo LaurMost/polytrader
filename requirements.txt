@@ -1,0 +1,20 @@
+# Core dependencies
+py-clob-client>=0.18.0
+websockets>=12.0
+click>=8.1.0
+pyyaml>=6.0
+pandas>=2.0.0
+rich>=13.0.0
+aiohttp>=3.9.0
+python-dotenv>=1.0.0
+
+# Dashboard & Analytics
+streamlit>=1.28.0
+plotly>=5.18.0
+scipy>=1.11.0
+
+# Optional ML dependencies
+scikit-learn>=1.3.0
+numpy>=1.24.0
+lightgbm>=4.0.0
+
