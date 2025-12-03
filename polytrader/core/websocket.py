@@ -66,6 +66,12 @@ class WebSocketManager:
         
         # Ping tasks
         self._ping_tasks: list[asyncio.Task] = []
+    
+
+        # Cache credentials for efficient lookup
+        self._api_key = getattr(self.config, "api_key", None)
+        self._api_secret = getattr(self.config, "api_secret", None)
+        self._api_passphrase = getattr(self.config, "api_passphrase", None)
 
     # ==================== Callback Registration ====================
 
@@ -215,7 +221,7 @@ class WebSocketManager:
     
     def has_credentials(self) -> bool:
         """Check if API credentials are configured."""
-        return bool(self.config.api_key and self.config.api_secret and self.config.api_passphrase)
+        return bool(self._api_key and self._api_secret and self._api_passphrase)
 
     async def disconnect(self) -> None:
         """Close WebSocket connections."""
