@@ -16,6 +16,7 @@ from datetime import datetime
 from unittest.mock import MagicMock, patch
 
 import pytest
+from websockets.protocol import State
 
 from polytrader.config import Config
 from polytrader.core.websocket import WebSocketManager
@@ -48,6 +49,53 @@ class TestWebSocketManagerUnit:
         assert manager._running is False
         assert len(manager._market_subscriptions) == 0
         assert len(manager._user_subscriptions) == 0
+        
+        # Test granular connection properties
+        assert manager.market_connected is False
+        assert manager.user_connected is False
+
+    def test_is_connected_no_credentials(self):
+        """Test is_connected logic without credentials (read-only mode)."""
+        with patch.object(Config, "_instance", None):
+            Config._config = {}
+            manager = WebSocketManager()
+            
+            # Initially disconnected
+            assert manager.is_connected is False
+            
+            # Connect market only
+            manager._market_ws = MagicMock()
+            manager._market_ws.state = State.OPEN
+            
+            # Should be connected (read-only mode requires only market)
+            assert manager.is_connected is True
+            assert manager.market_connected is True
+            assert manager.user_connected is False
+
+    def test_is_connected_with_credentials(self):
+        """Test is_connected logic with credentials (trading mode)."""
+        manager = WebSocketManager()
+        # Mock credentials existence (assuming default config has them or we mock has_credentials)
+        with patch.object(WebSocketManager, 'has_credentials', return_value=True):
+            
+            # Initially disconnected
+            assert manager.is_connected is False
+            
+            # Connect market only - should be False because we need user channel too
+            manager._market_ws = MagicMock()
+            manager._market_ws.state = State.OPEN
+            assert manager.is_connected is False
+            
+            # Connect user only - should be False
+            manager._market_ws = None
+            manager._user_ws = MagicMock()
+            manager._user_ws.state = State.OPEN
+            assert manager.is_connected is False
+            
+            # Connect both - should be True
+            manager._market_ws = MagicMock()
+            manager._market_ws.state = State.OPEN
+            assert manager.is_connected is True
 
     def test_callback_registration(self):
         """Test callback registration."""
@@ -268,14 +316,14 @@ class TestMessageHandling:
 
     @pytest.mark.asyncio
     async def test_trade_callback_invoked(self):
-        """Test that trade callbacks are invoked on trade events."""
+        """Test that trade callbacks are invoked on last_trade_price events."""
         manager = WebSocketManager()
         
         callback = MagicMock()
         manager.on_trade(callback)
         
         data = {
-            "event_type": "trade",
+            "event_type": "last_trade_price",
             "asset_id": "token_123",
             "price": "0.65",
             "size": "100",
@@ -285,6 +333,44 @@ class TestMessageHandling:
         await manager._handle_single_market_message(data)
         
         assert callback.called
+
+    @pytest.mark.asyncio
+    async def test_tick_size_change_logging(self):
+        """Test that tick_size_change events are logged."""
+        manager = WebSocketManager()
+        
+        with patch('polytrader.core.websocket.logger') as mock_logger:
+            data = {
+                "event_type": "tick_size_change",
+                "asset_id": "token_123",
+                "old_tick_size": "0.01",
+                "new_tick_size": "0.001"
+            }
+            
+            await manager._handle_single_market_message(data)
+            
+            mock_logger.info.assert_called_with(f"Tick size changed: {data}")
+
+    @pytest.mark.asyncio
+    async def test_user_trade_fill_callback(self):
+        """Test that user trade (fill) events trigger order callbacks."""
+        manager = WebSocketManager()
+        
+        callback = MagicMock()
+        manager.on_order_update(callback)
+        
+        data = {
+            "event_type": "trade",
+            "id": "trade_123",
+            "price": "0.55",
+            "size": "10",
+            "side": "BUY"
+        }
+        
+        await manager._handle_user_message(data)
+        
+        assert callback.called
+        assert callback.call_args[0][0] == data
 
 
 @pytest.mark.skipif(
@@ -310,7 +396,7 @@ class TestLiveWebSocketConnection:
             await manager._connect_market()
             
             assert manager._market_ws is not None
-            assert manager._market_ws.open
+            assert manager._market_ws.state == State.OPEN
             
         finally:
             if manager._market_ws:
@@ -365,15 +451,18 @@ class TestLiveWebSocketConnection:
         manager = WebSocketManager()
         
         try:
+            # Subscribe to ensure connection isn't closed due to inactivity/no-sub
+            await manager.subscribe_market([TEST_TOKEN_ID])
             await manager._connect_market()
             
             # Send a few pings manually
             for _ in range(3):
-                await manager._market_ws.send("PING")
-                await asyncio.sleep(1)
+                if manager._market_ws.state == State.OPEN:
+                    await manager._market_ws.send("PING")
+                    await asyncio.sleep(1)
             
             # Connection should still be open
-            assert manager._market_ws.open
+            assert manager._market_ws.state == State.OPEN
             
         finally:
             if manager._market_ws:
@@ -386,6 +475,8 @@ class TestLiveWebSocketConnection:
         manager._running = True
         
         try:
+            # Subscribe to ensure connection isn't closed due to inactivity/no-sub
+            await manager.subscribe_market([TEST_TOKEN_ID])
             await manager._connect_market()
             
             # Start ping task
@@ -397,7 +488,7 @@ class TestLiveWebSocketConnection:
             await asyncio.sleep(15)
             
             # Connection should still be open
-            assert manager._market_ws.open
+            assert manager._market_ws.state == State.OPEN
             
             manager._running = False
             ping_task.cancel()
@@ -433,7 +524,7 @@ class TestLiveUserChannel:
             await manager._connect_user()
             
             assert manager._user_ws is not None
-            assert manager._user_ws.open
+            assert manager._user_ws.state == State.OPEN
             
         finally:
             if manager._user_ws:
@@ -456,7 +547,7 @@ class TestLiveUserChannel:
             await manager._send_user_subscription()
             
             # Connection should still be open (no auth error)
-            assert manager._user_ws.open
+            assert manager._user_ws.state == State.OPEN
             
         finally:
             if manager._user_ws:

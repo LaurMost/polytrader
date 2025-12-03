@@ -11,6 +11,7 @@ from typing import Any, Callable, Optional
 
 import websockets
 from websockets.exceptions import ConnectionClosed
+from websockets.protocol import State
 
 from polytrader.config import get_config
 from polytrader.data.models import PriceUpdate
@@ -96,7 +97,7 @@ class WebSocketManager:
         """
         self._market_subscriptions.update(token_ids)
         
-        if self._market_ws and self._market_ws.open:
+        if self._market_ws and self._market_ws.state == State.OPEN:
             await self._send_market_subscription()
 
     async def unsubscribe_market(self, token_ids: list[str]) -> None:
@@ -112,7 +113,7 @@ class WebSocketManager:
         """
         self._user_subscriptions.update(condition_ids)
         
-        if self._user_ws and self._user_ws.open:
+        if self._user_ws and self._user_ws.state == State.OPEN:
             await self._send_user_subscription()
 
     # ==================== Connection Management ====================
@@ -293,7 +294,7 @@ class WebSocketManager:
         
         Polymarket requires PING messages every 5 seconds (not protocol-level pings).
         """
-        while self._running and ws and ws.open:
+        while self._running and ws and ws.state == State.OPEN:
             try:
                 await ws.send("PING")
                 logger.debug("Sent PING")
@@ -373,12 +374,15 @@ class WebSocketManager:
                 except Exception as e:
                     logger.error(f"Orderbook callback error: {e}")
         
-        elif event_type == "trade":
+        elif event_type == "last_trade_price":
             for callback in self._trade_callbacks:
                 try:
                     callback(data)
                 except Exception as e:
                     logger.error(f"Trade callback error: {e}")
+
+        elif event_type == "tick_size_change":
+            logger.info(f"Tick size changed: {data}")
 
     async def _handle_user_message(self, data: dict) -> None:
         """Handle a message from the user channel."""
@@ -390,6 +394,14 @@ class WebSocketManager:
                     callback(data)
                 except Exception as e:
                     logger.error(f"Order callback error: {e}")
+        
+        elif event_type == "trade":
+            # Handle trade fills
+            for callback in self._order_callbacks:
+                try:
+                    callback(data)
+                except Exception as e:
+                    logger.error(f"Order fill callback error: {e}")
 
     def _parse_price_updates(self, data: dict) -> list[PriceUpdate]:
         """
@@ -453,11 +465,32 @@ class WebSocketManager:
 
     @property
     def is_connected(self) -> bool:
-        """Check if WebSocket is connected."""
-        return (
-            (self._market_ws is not None and self._market_ws.open) or
-            (self._user_ws is not None and self._user_ws.open)
-        )
+        """
+        Check if WebSockets are fully connected.
+        
+        Returns True if:
+        1. Market channel is connected
+        2. User channel is connected (IF credentials are configured)
+        """
+        market_ok = self._market_ws is not None and self._market_ws.state == State.OPEN
+        
+        # If we are in trading mode (credentials exist), we MUST have the user channel
+        if self.has_credentials():
+            user_ok = self._user_ws is not None and self._user_ws.state == State.OPEN
+            return market_ok and user_ok
+            
+        # Read-only mode
+        return market_ok
+
+    @property
+    def market_connected(self) -> bool:
+        """Check if market WebSocket is connected."""
+        return self._market_ws is not None and self._market_ws.state == State.OPEN
+
+    @property
+    def user_connected(self) -> bool:
+        """Check if user WebSocket is connected."""
+        return self._user_ws is not None and self._user_ws.state == State.OPEN
 
     def __repr__(self) -> str:
         status = "connected" if self.is_connected else "disconnected"
