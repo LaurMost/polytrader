@@ -258,3 +258,29 @@ def crossunder(series1: pd.Series, series2: pd.Series) -> pd.Series:
         Boolean series (True where crossunder occurs)
     """
     return (series1 < series2) & (series1.shift(1) >= series2.shift(1))
+
+
+# Aliases for common naming conventions
+def roc(data: Union[pd.Series, list], period: int = 10) -> pd.Series:
+    """Alias for rate_of_change."""
+    return rate_of_change(data, period)
+
+
+def obv(close: Union[pd.Series, list], volume: Union[pd.Series, list]) -> pd.Series:
+    """
+    On-Balance Volume.
+    
+    Args:
+        close: Close price series
+        volume: Volume series
+        
+    Returns:
+        OBV series
+    """
+    close_s = pd.Series(close) if isinstance(close, list) else close
+    volume_s = pd.Series(volume) if isinstance(volume, list) else volume
+    
+    direction = close_s.diff().apply(lambda x: 1 if x > 0 else (-1 if x < 0 else 0))
+    obv_values = (direction * volume_s).cumsum()
+    
+    return obv_values
