@@ -17,50 +17,62 @@
 ## Test Coverage by Module
 
 ### CLI Tests (`test_cli.py`)
+
 - 16 tests covering all CLI commands
 - Tests: help, version, config, balance, history, orders, positions, stats, market, export, run
 
 ### Client Tests (`test_client.py`)
+
 - 7 tests for Polymarket API client
 - Tests: initialization, paper mode, market fetching, rate limiting, error handling
 
 ### Config Tests (`test_config.py`)
+
 - 11 tests for configuration management
 - Tests: singleton pattern, mode detection, get/set methods, env var substitution
 
 ### Executor Tests (`test_executor.py`)
+
 - 11 tests for order execution
 - Tests: initialization, paper trading, order placement, position tracking
 
 ### Helper Tests (`test_helpers.py`)
+
 - 12 tests for utility functions
 - Tests: format_amount, format_percentage, format_pnl
 
 ### Indicator Tests (`test_indicators.py`)
+
 - 18 tests for technical indicators
 - Tests: SMA, EMA, RSI, MACD, Bollinger Bands, ATR, ROC, OBV
 
 ### Metrics Tests (`test_metrics.py`)
+
 - 17 tests for performance metrics
 - Tests: P&L, Sharpe ratio, Sortino ratio, max drawdown, win rate, profit factor, expectancy, equity curve
 
 ### Model Tests (`test_models.py`)
+
 - 22 tests for data models
 - Tests: Market, Order, Trade, Position, PriceUpdate models and validation
 
 ### Significance Tests (`test_significance.py`)
+
 - 15 tests for statistical analysis
 - Tests: t-test, bootstrap confidence intervals, required sample size, statistical summary
 
 ### Storage Tests (`test_storage.py`)
+
 - 11 tests for data persistence
 - Tests: initialization, save/get trades/orders/positions, CSV export, persistence
 
 ### Strategy Tests (`test_strategy.py`)
+
 - 12 tests for strategy framework
 - Tests: base class, lifecycle hooks, loader, runner, callbacks
 
 ### URL Parser Tests (`test_url_parser.py`)
+
 - 11 tests for URL parsing
 - Tests: parse_market_url, is_valid_polymarket_url, extract_slug, format_market_summary
 
@@ -119,4 +131,3 @@ The test suite uses the following shared fixtures defined in `conftest.py`:
 - `mock_polymarket_response` - Mock API response
 - `price_series` - Sample price series for indicator testing
 - `ohlcv_data` - Sample OHLCV data for indicator testing
-

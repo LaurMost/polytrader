@@ -120,3 +120,58 @@ class TestClientErrorHandling:
             # Other handling acceptable
             pass
 
+
+class TestWebSocketMessageHandling:
+    """Tests for WebSocket message handling."""
+    
+    @pytest.mark.asyncio
+    async def test_handle_market_message_dict(self):
+        """Test handling dict message from WebSocket."""
+        from polytrader.core.websocket import WebSocketManager
+        
+        manager = WebSocketManager()
+        
+        # Dict message should be handled without error
+        data = {"event_type": "price_change", "price": "0.5"}
+        await manager._handle_market_message(data)
+    
+    @pytest.mark.asyncio
+    async def test_handle_market_message_list(self):
+        """Test handling list message from WebSocket (batch updates)."""
+        from polytrader.core.websocket import WebSocketManager
+        
+        manager = WebSocketManager()
+        
+        # List message should be handled without error
+        data = [
+            {"event_type": "price_change", "price": "0.5"},
+            {"event_type": "book", "bids": []},
+        ]
+        await manager._handle_market_message(data)
+    
+    @pytest.mark.asyncio
+    async def test_handle_market_message_empty_list(self):
+        """Test handling empty list message from WebSocket."""
+        from polytrader.core.websocket import WebSocketManager
+        
+        manager = WebSocketManager()
+        
+        # Empty list should be handled without error
+        await manager._handle_market_message([])
+    
+    @pytest.mark.asyncio
+    async def test_handle_market_message_mixed_list(self):
+        """Test handling list with non-dict items."""
+        from polytrader.core.websocket import WebSocketManager
+        
+        manager = WebSocketManager()
+        
+        # List with mixed types should skip non-dicts
+        data = [
+            {"event_type": "price_change"},
+            "string_item",  # Should be skipped
+            123,  # Should be skipped
+            {"event_type": "trade"},
+        ]
+        await manager._handle_market_message(data)
+

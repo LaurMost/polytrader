@@ -173,6 +173,7 @@ polytrader dashboard
 ```
 
 The dashboard includes:
+
 - Key metrics (P&L, Sharpe, Win Rate, Max Drawdown)
 - Interactive equity curve
 - P&L distribution analysis
@@ -237,7 +238,7 @@ Contributions are welcome! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for gui
 
 ## Disclaimer
 
-**This software is for educational and research purposes only.** 
+**This software is for educational and research purposes only.**
 
 - Trading prediction markets involves significant financial risk
 - Past performance does not guarantee future results

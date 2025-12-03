@@ -11,22 +11,26 @@ Please be respectful and constructive in all interactions. We're all here to bui
 ### Development Setup
 
 1. **Fork and clone the repository**
+
    ```bash
    git clone https://github.com/YOUR_USERNAME/polytrader.git
    cd polytrader
    ```
 
 2. **Install uv** (if not already installed)
+
    ```bash
    curl -LsSf https://astral.sh/uv/install.sh | sh
    ```
 
 3. **Install dependencies with dev extras**
+
    ```bash
    uv sync --all-extras
    ```
 
 4. **Verify setup**
+
    ```bash
    uv run polytrader --help
    uv run pytest
@@ -72,6 +76,7 @@ polytrader/
 ### Submitting Code
 
 1. **Create a branch**
+
    ```bash
    git checkout -b feature/your-feature-name
    # or
@@ -84,6 +89,7 @@ polytrader/
    - Update documentation as needed
 
 3. **Run checks**
+
    ```bash
    # Lint
    uv run ruff check .
@@ -99,6 +105,7 @@ polytrader/
    ```
 
 4. **Commit with clear messages**
+
    ```bash
    git commit -m "feat: add new indicator for RSI divergence"
    git commit -m "fix: handle empty price history response"
@@ -106,6 +113,7 @@ polytrader/
    ```
 
 5. **Push and create a Pull Request**
+
    ```bash
    git push origin feature/your-feature-name
    ```
@@ -217,4 +225,3 @@ By contributing, you agree that your contributions will be licensed under the MI
 ---
 
 Thank you for contributing to Polytrader!
-

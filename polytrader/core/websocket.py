@@ -297,8 +297,21 @@ class WebSocketManager:
             except Exception as e:
                 logger.error(f"Error processing user message: {e}")
 
-    async def _handle_market_message(self, data: dict) -> None:
+    async def _handle_market_message(self, data: Any) -> None:
         """Handle a message from the market channel."""
+        # Handle list of messages (batch updates from Polymarket)
+        if isinstance(data, list):
+            for item in data:
+                if isinstance(item, dict):
+                    await self._handle_single_market_message(item)
+            return
+        
+        # Handle single message
+        if isinstance(data, dict):
+            await self._handle_single_market_message(data)
+
+    async def _handle_single_market_message(self, data: dict) -> None:
+        """Handle a single market message."""
         event_type = data.get("event_type", "")
         
         if event_type == "price_change":
