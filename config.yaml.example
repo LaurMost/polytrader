@@ -11,6 +11,14 @@ api:
   # Your private key (use env var reference for security)
   # Set via: export POLYMARKET_PRIVATE_KEY="your_key_here"
   private_key: ${POLYMARKET_PRIVATE_KEY}
+  
+  # API credentials for WebSocket authentication
+  # These can be derived from your private key using py-clob-client,
+  # or set manually. See: https://docs.polymarket.com/developers/CLOB/authentication
+  api_key: ${POLYMARKET_API_KEY}
+  api_secret: ${POLYMARKET_API_SECRET}
+  api_passphrase: ${POLYMARKET_API_PASSPHRASE}
+  
   # Polygon chain ID (137 for mainnet)
   chain_id: 137
   # CLOB API endpoint
@@ -22,8 +30,8 @@ websocket:
   auto_reconnect: true
   # Reconnect delay in seconds
   reconnect_delay: 5
-  # Heartbeat interval in seconds
-  heartbeat_interval: 30
+  # Ping interval in seconds (Polymarket requires PING every 5 seconds)
+  ping_interval: 5
 
 # Logging settings
 logging:

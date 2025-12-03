@@ -6,9 +6,6 @@ Handles connections to market and user channels for live updates.
 
 import asyncio
 import json
-import time
-import hashlib
-import hmac
 from datetime import datetime
 from typing import Any, Callable, Optional
 
@@ -65,7 +62,10 @@ class WebSocketManager:
         # Reconnection settings
         self._auto_reconnect = self.config.get("websocket.auto_reconnect", True)
         self._reconnect_delay = self.config.get("websocket.reconnect_delay", 5)
-        self._heartbeat_interval = self.config.get("websocket.heartbeat_interval", 30)
+        self._ping_interval = self.config.get("websocket.ping_interval", 5)  # Polymarket requires 5s
+        
+        # Ping tasks
+        self._ping_tasks: list[asyncio.Task] = []
 
     # ==================== Callback Registration ====================
 
@@ -128,10 +128,11 @@ class WebSocketManager:
     async def _connect_market(self) -> None:
         """Connect to market WebSocket."""
         try:
+            # Disable library-level ping; we send explicit PING messages per Polymarket docs
             self._market_ws = await websockets.connect(
                 self.WSS_URL,
-                ping_interval=self._heartbeat_interval,
-                ping_timeout=10,
+                ping_interval=None,
+                ping_timeout=None,
             )
             logger.info("Connected to market WebSocket")
             
@@ -145,10 +146,11 @@ class WebSocketManager:
     async def _connect_user(self) -> None:
         """Connect to user WebSocket."""
         try:
+            # Disable library-level ping; we send explicit PING messages per Polymarket docs
             self._user_ws = await websockets.connect(
                 self.USER_WSS_URL,
-                ping_interval=self._heartbeat_interval,
-                ping_timeout=10,
+                ping_interval=None,
+                ping_timeout=None,
             )
             logger.info("Connected to user WebSocket")
             
@@ -163,21 +165,31 @@ class WebSocketManager:
         if not self._market_ws or not self._market_subscriptions:
             return
         
-        message = {
+        # Build subscription message per Polymarket docs
+        message: dict[str, Any] = {
             "assets_ids": list(self._market_subscriptions),
             "type": "MARKET",
+            "initial_dump": True,  # Receive initial orderbook state
         }
+        
+        # Include auth if credentials are available
+        auth = self._get_auth()
+        if auth.get("apiKey"):
+            message["auth"] = auth
         
         await self._market_ws.send(json.dumps(message))
         logger.debug(f"Subscribed to {len(self._market_subscriptions)} markets")
 
     async def _send_user_subscription(self) -> None:
         """Send user subscription message with authentication."""
-        if not self._user_ws or not self._user_subscriptions:
+        if not self._user_ws:
             return
         
-        # Generate auth signature
-        auth = self._generate_auth()
+        # Get auth credentials
+        auth = self._get_auth()
+        if not auth.get("apiKey"):
+            logger.warning("No API credentials configured for user channel")
+            return
         
         message = {
             "auth": auth,
@@ -188,37 +200,35 @@ class WebSocketManager:
         await self._user_ws.send(json.dumps(message))
         logger.debug(f"Subscribed to user channel for {len(self._user_subscriptions)} markets")
 
-    def _generate_auth(self) -> dict:
-        """Generate authentication for user channel."""
-        timestamp = int(time.time() * 1000)
-        nonce = str(timestamp)
+    def _get_auth(self) -> dict[str, str]:
+        """
+        Get authentication credentials for WebSocket channels.
         
-        # Create signature
-        message = f"polymarket:{nonce}"
-        private_key = self.config.private_key
-        
-        if not private_key:
-            return {}
-        
-        # Sign the message
-        signature = hmac.new(
-            private_key.encode(),
-            message.encode(),
-            hashlib.sha256
-        ).hexdigest()
-        
+        Returns dict with apiKey, secret, and passphrase as required by Polymarket.
+        These credentials can be obtained from py-clob-client or set manually in config.
+        """
         return {
-            "apiKey": "",  # Not needed for basic auth
-            "secret": "",
-            "passphrase": "",
-            "timestamp": str(timestamp),
-            "nonce": nonce,
-            "signature": signature,
+            "apiKey": self.config.api_key,
+            "secret": self.config.api_secret,
+            "passphrase": self.config.api_passphrase,
         }
+    
+    def has_credentials(self) -> bool:
+        """Check if API credentials are configured."""
+        return bool(self.config.api_key and self.config.api_secret and self.config.api_passphrase)
 
     async def disconnect(self) -> None:
         """Close WebSocket connections."""
         self._running = False
+        
+        # Cancel ping tasks
+        for task in self._ping_tasks:
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
+        self._ping_tasks.clear()
         
         if self._market_ws:
             await self._market_ws.close()
@@ -240,20 +250,27 @@ class WebSocketManager:
             try:
                 await self.connect()
                 
-                # Create tasks for both channels
+                # Create tasks for message processing and ping sending
                 tasks = []
                 
                 if self._market_ws:
                     tasks.append(asyncio.create_task(self._process_market_messages()))
+                    ping_task = asyncio.create_task(self._send_pings(self._market_ws))
+                    self._ping_tasks.append(ping_task)
+                    tasks.append(ping_task)
                 
                 if self._user_ws:
                     tasks.append(asyncio.create_task(self._process_user_messages()))
+                    ping_task = asyncio.create_task(self._send_pings(self._user_ws))
+                    self._ping_tasks.append(ping_task)
+                    tasks.append(ping_task)
                 
                 if tasks:
                     await asyncio.gather(*tasks)
                     
             except ConnectionClosed as e:
                 logger.warning(f"WebSocket connection closed: {e}")
+                self._cancel_ping_tasks()
                 
                 if self._auto_reconnect and self._running:
                     logger.info(f"Reconnecting in {self._reconnect_delay}s...")
@@ -263,11 +280,36 @@ class WebSocketManager:
                     
             except Exception as e:
                 logger.error(f"WebSocket error: {e}")
+                self._cancel_ping_tasks()
                 
                 if self._auto_reconnect and self._running:
                     await asyncio.sleep(self._reconnect_delay)
                 else:
                     break
+    
+    async def _send_pings(self, ws: Any) -> None:
+        """
+        Send explicit PING messages to keep connection alive.
+        
+        Polymarket requires PING messages every 5 seconds (not protocol-level pings).
+        """
+        while self._running and ws and ws.open:
+            try:
+                await ws.send("PING")
+                logger.debug("Sent PING")
+                await asyncio.sleep(self._ping_interval)
+            except ConnectionClosed:
+                break
+            except Exception as e:
+                logger.warning(f"Ping error: {e}")
+                break
+    
+    def _cancel_ping_tasks(self) -> None:
+        """Cancel all running ping tasks."""
+        for task in self._ping_tasks:
+            if not task.done():
+                task.cancel()
+        self._ping_tasks.clear()
 
     async def _process_market_messages(self) -> None:
         """Process messages from market channel."""
@@ -315,8 +357,9 @@ class WebSocketManager:
         event_type = data.get("event_type", "")
         
         if event_type == "price_change":
-            update = self._parse_price_update(data)
-            if update:
+            # Parse price updates (handles both old and new format)
+            updates = self._parse_price_updates(data)
+            for update in updates:
                 for callback in self._price_callbacks:
                     try:
                         callback(update)
@@ -348,8 +391,51 @@ class WebSocketManager:
                 except Exception as e:
                     logger.error(f"Order callback error: {e}")
 
-    def _parse_price_update(self, data: dict) -> Optional[PriceUpdate]:
-        """Parse a price update message."""
+    def _parse_price_updates(self, data: dict) -> list[PriceUpdate]:
+        """
+        Parse price update message(s).
+        
+        Handles both old format (single update) and new format (price_changes array).
+        The new format (Sept 2025) has asset_id inside each price_change object.
+        """
+        updates = []
+        
+        try:
+            # New format: price_changes array with asset_id inside each change
+            if "price_changes" in data:
+                market_id = data.get("market", "")
+                for pc in data["price_changes"]:
+                    update = self._parse_single_price_change(pc, market_id)
+                    if update:
+                        updates.append(update)
+            else:
+                # Legacy format: single update with asset_id at top level
+                update = self._parse_legacy_price_update(data)
+                if update:
+                    updates.append(update)
+                    
+        except Exception as e:
+            logger.error(f"Failed to parse price update: {e}")
+            
+        return updates
+    
+    def _parse_single_price_change(self, pc: dict, market_id: str) -> Optional[PriceUpdate]:
+        """Parse a single price change from the new format."""
+        try:
+            return PriceUpdate(
+                market_id=market_id,
+                token_id=pc.get("asset_id", ""),
+                price=float(pc.get("price", 0)),
+                timestamp=datetime.now(),
+                best_bid=float(pc["best_bid"]) if "best_bid" in pc else None,
+                best_ask=float(pc["best_ask"]) if "best_ask" in pc else None,
+            )
+        except Exception as e:
+            logger.error(f"Failed to parse price change: {e}")
+            return None
+    
+    def _parse_legacy_price_update(self, data: dict) -> Optional[PriceUpdate]:
+        """Parse a price update in the legacy format."""
         try:
             return PriceUpdate(
                 market_id=data.get("market", ""),
@@ -360,7 +446,7 @@ class WebSocketManager:
                 best_ask=float(data["ask"]) if "ask" in data else None,
             )
         except Exception as e:
-            logger.error(f"Failed to parse price update: {e}")
+            logger.error(f"Failed to parse legacy price update: {e}")
             return None
 
     # ==================== Utility Methods ====================

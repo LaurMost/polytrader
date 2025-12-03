@@ -82,13 +82,16 @@ class Config:
             "mode": "paper",
             "api": {
                 "private_key": "",
+                "api_key": "",
+                "api_secret": "",
+                "api_passphrase": "",
                 "chain_id": 137,
                 "host": "https://clob.polymarket.com",
             },
             "websocket": {
                 "auto_reconnect": True,
                 "reconnect_delay": 5,
-                "heartbeat_interval": 30,
+                "ping_interval": 5,  # Polymarket requires PING every 5 seconds
             },
             "logging": {
                 "level": "INFO",
@@ -153,6 +156,21 @@ class Config:
     def private_key(self) -> str:
         """Get private key for signing transactions."""
         return self.get("api.private_key", "")
+
+    @property
+    def api_key(self) -> str:
+        """Get API key for WebSocket authentication."""
+        return self.get("api.api_key", "")
+
+    @property
+    def api_secret(self) -> str:
+        """Get API secret for WebSocket authentication."""
+        return self.get("api.api_secret", "")
+
+    @property
+    def api_passphrase(self) -> str:
+        """Get API passphrase for WebSocket authentication."""
+        return self.get("api.api_passphrase", "")
 
     @property
     def chain_id(self) -> int:
