@@ -68,6 +68,17 @@ class WebSocketManager:
         # Ping tasks
         self._ping_tasks: list[asyncio.Task] = []
 
+
+        # Cache config key lookups for auth
+        _api_key = getattr(self.config, "api_key", None)
+        _api_secret = getattr(self.config, "api_secret", None)
+        _api_passphrase = getattr(self.config, "api_passphrase", None)
+        self._auth: dict[str, str] = {
+            "apiKey": _api_key,
+            "secret": _api_secret,
+            "passphrase": _api_passphrase,
+        }
+
     # ==================== Callback Registration ====================
 
     def on_price_update(self, callback: Callable[[PriceUpdate], None]) -> None:
@@ -208,11 +219,7 @@ class WebSocketManager:
         Returns dict with apiKey, secret, and passphrase as required by Polymarket.
         These credentials can be obtained from py-clob-client or set manually in config.
         """
-        return {
-            "apiKey": self.config.api_key,
-            "secret": self.config.api_secret,
-            "passphrase": self.config.api_passphrase,
-        }
+        return self._auth
     
     def has_credentials(self) -> bool:
         """Check if API credentials are configured."""
