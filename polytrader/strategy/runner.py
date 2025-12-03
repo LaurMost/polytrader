@@ -70,7 +70,24 @@ class StrategyRunner:
             
             # Run main loop
             self._running = True
-            await self.websocket.run()
+            
+            # Start heartbeat task alongside WebSocket
+            heartbeat_task = asyncio.create_task(self._heartbeat_loop())
+            websocket_task = asyncio.create_task(self.websocket.run())
+            
+            # Wait for either to complete (websocket disconnect or error)
+            done, pending = await asyncio.wait(
+                [heartbeat_task, websocket_task],
+                return_when=asyncio.FIRST_COMPLETED
+            )
+            
+            # Cancel remaining tasks
+            for task in pending:
+                task.cancel()
+                try:
+                    await task
+                except asyncio.CancelledError:
+                    pass
             
         except KeyboardInterrupt:
             logger.info("Strategy interrupted by user")
@@ -92,6 +109,31 @@ class StrategyRunner:
         
         # Disconnect WebSocket
         await self.websocket.disconnect()
+
+    async def _heartbeat_loop(self) -> None:
+        """Periodic heartbeat to show strategy is alive."""
+        heartbeat_interval = self.config.get("strategy.heartbeat_interval", 30)
+        
+        while self._running:
+            await asyncio.sleep(heartbeat_interval)
+            
+            if not self._running:
+                break
+            
+            # Call strategy heartbeat if it exists
+            if hasattr(self.strategy, 'on_heartbeat'):
+                try:
+                    self.strategy.on_heartbeat()
+                except Exception as e:
+                    logger.error(f"Error in on_heartbeat: {e}")
+            else:
+                # Default heartbeat log
+                logger.info(
+                    f"💓 [{self.strategy.name}] Heartbeat | "
+                    f"Markets: {len(self.strategy._markets)} | "
+                    f"Positions: {len(self.strategy._positions)} | "
+                    f"WS: {'connected' if self.websocket.is_connected else 'disconnected'}"
+                )
 
     async def _load_markets(self) -> None:
         """Load markets specified in the strategy."""
@@ -184,9 +226,25 @@ class StrategyRunner:
                     except Exception as e:
                         logger.error(f"Error in on_fill: {e}")
         
+        def on_trade(data: dict):
+            # Handle trade events from market channel
+            asset_id = data.get("asset_id", "")
+            for market in self.strategy._markets.values():
+                if (
+                    market.token_id_yes == asset_id or
+                    market.token_id_no == asset_id
+                ):
+                    try:
+                        if hasattr(self.strategy, 'on_market_trade'):
+                            self.strategy.on_market_trade(market, data)
+                    except Exception as e:
+                        logger.error(f"Error in on_market_trade: {e}")
+                    break
+        
         # Register callbacks
         self.websocket.on_price_update(on_price_update)
         self.websocket.on_orderbook_update(on_orderbook_update)
+        self.websocket.on_trade(on_trade)
         self.websocket.on_order_update(on_order_update)
 
     def __repr__(self) -> str:

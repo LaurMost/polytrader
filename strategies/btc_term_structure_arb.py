@@ -109,6 +109,12 @@ class BTCTermStructureArb(Strategy):
         
         # API client for market discovery
         self._api_client = PolymarketClient()
+        
+        # Heartbeat / status tracking
+        self._last_status_time = 0
+        self._status_interval = 30  # Log status every 30 seconds
+        self._price_updates_received = 0
+        self._ws_messages_received = 0
     
     def on_start(self) -> None:
         """Initialize strategy and discover active markets."""
@@ -147,8 +153,17 @@ class BTCTermStructureArb(Strategy):
         3. Detect arbitrage opportunities
         4. Execute or manage spread trades
         """
+        # Track price updates received
+        self._price_updates_received += 1
+        
         # Periodically re-discover markets
         current_time = time.time()
+        
+        # Log periodic status update (heartbeat)
+        if current_time - self._last_status_time > self._status_interval:
+            self._log_status()
+            self._last_status_time = current_time
+        
         if current_time - self._last_discovery_time > self._discovery_interval:
             self._discover_active_markets()
             self._last_discovery_time = current_time
@@ -290,6 +305,46 @@ class BTCTermStructureArb(Strategy):
                 parts.append(f"{tf}=N/A")
         
         self.log(f"Term Structure: {' | '.join(parts)}")
+    
+    def _log_status(self) -> None:
+        """Log periodic status update (heartbeat)."""
+        structure = self._calculate_term_structure()
+        active_markets = sum(1 for m in self._timeframe_markets.values() if m is not None)
+        
+        # Build term structure string
+        ts_parts = []
+        for tf in ["15m", "1h", "4h", "24h"]:
+            if tf in structure:
+                ts_parts.append(f"{tf}:{structure[tf]:.0%}")
+        ts_str = " | ".join(ts_parts) if ts_parts else "No data"
+        
+        self.log(
+            f"💓 HEARTBEAT | Updates: {self._price_updates_received} | "
+            f"Markets: {active_markets}/4 | Positions: {len(self._spread_positions)} | "
+            f"[{ts_str}]"
+        )
+        
+        # Reset counter
+        self._price_updates_received = 0
+    
+    def on_heartbeat(self) -> None:
+        """Called periodically by the runner to show strategy is alive."""
+        structure = self._calculate_term_structure()
+        active_markets = sum(1 for m in self._timeframe_markets.values() if m is not None)
+        
+        # Build term structure string
+        ts_parts = []
+        for tf in ["15m", "1h", "4h", "24h"]:
+            if tf in structure:
+                ts_parts.append(f"{tf}:{structure[tf]:.0%}")
+        ts_str = " | ".join(ts_parts) if ts_parts else "No data"
+        
+        self.log(
+            f"💓 ALIVE | Price updates: {self._price_updates_received} | "
+            f"WS msgs: {self._ws_messages_received} | "
+            f"Markets: {active_markets}/4 | Positions: {len(self._spread_positions)} | "
+            f"[{ts_str}]"
+        )
     
     def _find_arbitrage_opportunities(self, structure: dict[str, float]) -> list[dict]:
         """
@@ -544,6 +599,23 @@ class BTCTermStructureArb(Strategy):
     def on_error(self, error: Exception) -> None:
         """Handle errors."""
         self.log(f"Error: {error}", level="error")
+    
+    def on_orderbook_update(self, market: Market, orderbook: dict) -> None:
+        """Handle orderbook updates from WebSocket."""
+        self._ws_messages_received += 1
+        # Log every 50th message to show activity without spam
+        if self._ws_messages_received % 50 == 1:
+            self.log(f"📊 WS Activity | Messages: {self._ws_messages_received} | Market: {market.slug[:30]}...")
+    
+    def on_market_trade(self, market: Market, data: dict) -> None:
+        """Handle trade events from WebSocket (other users' trades)."""
+        self._ws_messages_received += 1
+        price = data.get("price", "?")
+        size = data.get("size", "?")
+        side = data.get("side", "?")
+        # Log trades to show market activity
+        if self._ws_messages_received % 20 == 1:
+            self.log(f"🔄 Market Trade | {market.slug[:25]}... | {side} {size}@{price}")
 
 
 # Default export
